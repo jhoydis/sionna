@@ -1,3 +1,9 @@
+#
+# SPDX-FileCopyrightText: Copyright (c) 2021-2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+"""Class definition and functions related to OFDM channel equalization"""
+
 # Load the required sionna components
 import tensorflow as tf
 import sionna
