@@ -6,6 +6,7 @@
 
 import numpy as np
 import tensorflow as tf
+from sionna.utils import flatten_dims, split_dim
 from tensorflow.keras.layers import Layer
 from tensorflow.experimental.numpy import log10 as _log10
 from tensorflow.experimental.numpy import log2 as _log2
@@ -749,6 +750,36 @@ def complex_normal(shape, var=1.0, dtype=tf.complex64):
     x = tf.complex(xr, xi)
 
     return x
+
+def selectDataCarryingOFDMSymbols(data_vec, rg_dim, data_ind, num_ofdm_data_symbols, num_effective_subcarriers):
+    r"""Select data carrying OFDM symbols from resource grid, i.e., removes pilot data
+
+        Input
+        -----
+        data_vec : tf.complex64
+            Data vector
+
+        rg_dim : int
+            index in input tensor which to be modified, usually 2
+
+        data_ind: tf.int
+            Indices of the data symbols, from tf.argsort(flatten_last_dims(resource_grid.pilot_pattern.mask), direction="ASCENDING")
+
+        num_ofdm_data_symbols: int
+            Number of data-carrying OFDM time symbols (i.e., total number of OFDM symbols minus the number of pilot symbols)
+
+        num_effective_subcarriers: int
+            Number of effective subcarriers
+
+        Output
+        ------
+        data_vec
+            Same data vector as input with pilot resource elements removed
+        """
+    data_vec = flatten_dims(data_vec, 2, rg_dim)
+    data_vec = tf.gather(data_vec, data_ind,
+                         axis=2)  # data_ind carries indices for all data streams, we assume that they are all the same and only select the first one
+    return split_dim(data_vec, [num_ofdm_data_symbols, num_effective_subcarriers], axis=rg_dim)
 
 
 ###########################################################
