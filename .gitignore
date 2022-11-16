@@ -12,3 +12,4 @@ dev
 _build
 doc/build
 projects/
+.idea/
