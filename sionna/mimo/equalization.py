@@ -418,7 +418,7 @@ class SiSoMmsePicEqualizer(Layer):
         y, h = whiten_channel(y, h, s, return_s=False)  # pylint: disable=unbalanced-tuple-unpacking
 
         # matched filtering of y
-        y_mf = tf.expand_dims(tf.linalg.matvec(h, y, adjoint_a=True), -1)      # y_mf is [..., K, 1]
+        y_mf = insert_dims(tf.linalg.matvec(h, y, adjoint_a=True), num_dims=1, axis=-1)      # y_mf is [..., K, 1]
 
         ## Step 1: compute Gramm matrix
         g = tf.matmul(h, h, adjoint_a=True)     # g is [..., K, K]
