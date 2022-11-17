@@ -739,7 +739,9 @@ class SiSoMmsePicDetector(Layer):
             llr_a = llr_d
 
             # Step 2: compute soft symbol estimates and variances using built-in Sionna utility functions
-            # notice that there are more efficient direct computation approaches available @TODO add reference
+            # Notice that there are more efficient direct computation approaches available
+            # For an example, refer to https://ieeexplore.ieee.org/abstract/document/4025128 or to
+            # https://github.com/rwiesmayr/sionna/blob/main/sionna/ofdm/equalization.py for a Sionna implementation
             x_hat, var_x = self._symbolLogits2moments(self._llr2symbolLogits(llr_a))  # both are [..., K]
 
             # Step 3: perform parallel interference cancellation
@@ -792,6 +794,9 @@ class SiSoMmsePicDetector(Layer):
             no_eff = 1. / var_x
 
             # Step 6: LLR demapping (extrinsic LLRs)
+            # notice that there are more efficient direct computation approaches available
+            # For an example, refer to https://ieeexplore.ieee.org/document/1371654 or to
+            # https://github.com/rwiesmayr/sionna/blob/main/sionna/ofdm/equalization.py for a Sionna implementation
             llr_d = tf.reshape(self._bit_demapper([x_hat, llr_a, no_eff]), llr_shape)
             # llr_d is [..., K, num_bits_per_symbols]
 
