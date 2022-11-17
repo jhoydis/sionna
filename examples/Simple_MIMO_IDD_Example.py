@@ -15,12 +15,13 @@ import tensorflow as tf
 import sionna
 from tensorflow.keras import Model
 from sionna.mimo import StreamManagement, lmmse_equalizer
-from sionna.mimo.equalization import SiSoMmsePicEqualizer
+
+from sionna.mimo.detection import SiSoMmsePicDetector
 
 import numpy as np
 
 import matplotlib.pyplot as plt
-from sionna.mapping import Constellation, Mapper, Demapper, DemapperWithPrior
+from sionna.mapping import Constellation, Mapper, Demapper, DemapperWithPrior, LLRs2SymbolLogits, SymbolLogits2LLRs
 from sionna.fec.ldpc import LDPC5GEncoder, LDPC5GDecoder
 from sionna.utils import BinarySource, ebnodb2no, sim_ber, expand_to_rank, flatten_dims
 from sionna.channel import FlatFadingChannel
@@ -31,22 +32,14 @@ from sionna.channel import FlatFadingChannel
 
 # set the total number of LDPC iterations to study
 num_ldpc_iter = 10
-perfect_csi = False
-GPU_NUM = 0
+GPU_NUM = 3
 
 # Debug => smaller batchsize, Monte Carlo iterations
 DEBUG = False
 
-channel_model_str = "UMi"  # "UMi", "UMa", "RMa", "Rayleigh"
-normalizing_channels = True
 low_complexity = True
 XLA_ENA = True
 OPTIMIZED_LDPC_INTERLEAVER = True
-
-# LoS True only line of sight, False: none-los, none: mix of los and none-los
-LoS = True
-MOBILITY = True
-Antenna_Array = "Dual-Pol-ULA"
 
 # Select GPU 0 to run TF/Sionna
 gpus = tf.config.list_physical_devices('GPU')
@@ -109,13 +102,6 @@ k = int(n * r)  # number of information bits per codeword
 # Constellation 16 QAM
 # initialize mapper (and demapper) for constellation object
 constellation = Constellation("qam", num_bits_per_symbol=num_bits_per_symbol, dtype=dtype)
-
-# Define MU-MIMO System
-rx_tx_association = np.zeros([1, n_ue])
-rx_tx_association[0, :] = 1
-
-# stream management stores a mapping from Rx and Tx
-sm = StreamManagement(rx_tx_association, num_streams_per_tx)
 
 #####################################################################################################################
 ## Define Models
@@ -200,7 +186,7 @@ class iddMmsePicModel(BaseModel):
         self._num_idd_iter = num_idd_iter
 
         self._lmmse_equalizer = lmmse_equalizer
-        self._mmse_pic_equalizer = SiSoMmsePicEqualizer(num_iter=num_mmse_pic_iter, constellation=constellation, dtype=dtype)
+        self._mmse_pic = SiSoMmsePicDetector(output="bit", num_iter=num_mmse_pic_iter, constellation=constellation, dtype=dtype)
         self._LDPCDec0 = LDPC5GDecoder(self._encoder, cn_type=ldpc_cn_update_func, return_infobits=False,
                                                num_iter=int(num_bp_iter), stateful=False, hard_out=False,
                                        output_dtype=dtype.real_dtype)
@@ -249,17 +235,13 @@ class iddMmsePicModel(BaseModel):
 
         def idd_iter(llr_ch, it):
             it += 1
+            # channel decoder's input LLRs are extrinsic LLRs from data detector
             llr_dec = self._LDPCDec0(llr_ch)
 
             # prior for MMSE PIC are intrinsic LLRs from decoder
             prior = tf.transpose(tf.reshape(llr_dec, [batch_size, n_ue, int(n/num_bits_per_symbol), num_bits_per_symbol]), [0,2,1,3])
-            [x_hat, no_eff] = self._mmse_pic_equalizer([y, h, prior, s])
 
-            # MMSE PIC self-iterations (including the approximate PME, i.e, soft-estimate to LLR and LLR to soft-estimate calculation)
-            #prior = tf.reshape(self._demapper_prior([x_hat, prior, no_eff]), [batch_size, int(n/num_bits_per_symbol), n_ue, num_bits_per_symbol])
-            #[x_hat, no_eff] = self._mmse_pic_equalizer([y, h, prior, s])
-
-            llr_ch = tf.reshape(self._demapper_prior([x_hat, prior, no_eff]), [batch_size, int(n/num_bits_per_symbol), n_ue, num_bits_per_symbol]) - prior    # extrinsic LLRs
+            llr_ch = self._mmse_pic([y, h, prior, s])
             llr_ch = flatten_dims(tf.transpose(llr_ch, [0,2,1,3]), 2, 2)
 
             return llr_ch, it
@@ -279,10 +261,10 @@ class iddMmsePicModel(BaseModel):
 ## Define Benchmark Models
 #####################################################################################################################
 # LMMSE Baseline Model
-lmmse_baseline = LmmseBaselineModel(num_bp_iter=num_ldpc_iter, perfect_csi=perfect_csi)
+lmmse_baseline = LmmseBaselineModel(num_bp_iter=num_ldpc_iter)
 
-# I=3 IDD MMSE PIC Model
-idd_mmse_pic_model = iddMmsePicModel(num_bp_iter=int(num_ldpc_iter), num_idd_iter=num_idd_iter, perfect_csi=perfect_csi)
+# IDD MMSE PIC Model
+idd_mmse_pic_model = iddMmsePicModel(num_bp_iter=int(num_ldpc_iter), num_idd_iter=num_idd_iter)
 
 #####################################################################################################################
 ## Benchmark Models
@@ -292,7 +274,7 @@ snr_range=np.arange(-10, 10+stepsize, stepsize)
 BLER = {'snr_range': snr_range}
 BER = {'snr_range': snr_range}
 
-title = "Benchmark w. Perfect-CSI=" + str(perfect_csi) + " " + str(n_bs_ant) + 'x' + str(n_ue) + channel_model_str + ' w. 16QAM Mapping & ' + str(num_ldpc_iter) + ' LDPC Iter ' + Antenna_Array
+title = "Benchmark w" " " + str(n_bs_ant) + 'x' + str(n_ue) + ' MIMO, ' + str(num_ldpc_iter) + ' LDPC Iter'
 
 models = [idd_mmse_pic_model, lmmse_baseline]
 model_names = ["idd_mmse_pic_model", "lmmse_baseline"]
@@ -304,7 +286,6 @@ for i in range(len(models)):
     BER[model_names[i]] = ber.numpy()
 
 # Plot results
-
 plt.figure(figsize=(10, 6))
 for i in range(len(models)):
     plt.semilogy(BLER["snr_range"], BLER[model_names[i]], 'o-', c=f'C'+str(i), label=model_names[i])
