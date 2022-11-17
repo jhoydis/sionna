@@ -643,7 +643,7 @@ class MaximumLikelihoodDetector(MaximumLikelihoodDetectorWithPrior):
 This layer implements the soft-input soft-output minimum mean squared error (MMSE) parallel interference cancellation 
 detector (SISO MMSE PIC), as proposed in [CST2011]_. For num_iter>1, this implementation performs MMSE PIC self-iterations,
 which can lead to (minor) additional performance gains. MMSE PIC self-iterations can be understood as a concatenation of 
-MMSE PIC detectors from [CST2011]_, which forward intrinsic LLRs to the next iteration.
+MMSE PIC detectors from [CST2011]_, which forward intrinsic LLRs to the next (self-)iteration.
 
 In addition to [CST2011]_, this implementation also accepts symbol logit priors. However, for consistency,
 the input symbol logits are mapped to LLRs and the symbol logit outputs are also computed from the MMSE PIC output LLRs.
